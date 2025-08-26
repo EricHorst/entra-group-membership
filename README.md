@@ -1,13 +1,22 @@
-# Recursive Entra Group Member Scripts
+# Enterprise Entra Group Membership Module
 
-This repository contains PowerShell scripts for recursively getting all effective users from nested Azure AD/Entra groups using Microsoft Graph PowerShell cmdlets.
+A unified, enterprise-grade PowerShell module for recursively analyzing Entra (Azure AD) group memberships with enhanced reliability, performance, and reporting capabilities.
+
+## 🚀 Key Features
+
+- **✅ Unified Architecture** - Single, robust module with consistent API usage
+- **✅ Enterprise-Grade Retry Logic** - Automatic handling of transient Graph API failures with exponential backoff
+- **✅ Enhanced Error Handling** - Comprehensive error tracking and reporting
+- **✅ Progress Reporting** - Real-time progress updates for long-running operations
+- **✅ Multiple Export Formats** - CSV, JSON, and HTML report generation
+- **✅ Detailed Statistics** - Processing metrics, timing, and API usage tracking
+- **✅ Proper Variable Scoping** - Clean module design with no global variable pollution
 
 ## Files
 
-- **`Get-NestedGroupMembers.ps1`** - Full-featured script with comprehensive logging, error handling, and export capabilities
-- **`Get-EffectiveGroupMembers.psm1`** - Simple PowerShell module containing the core recursive function
-- **`Example-Usage.ps1`** - Example script showing how to use the functions
-- **`README.md`** - This documentation file
+- **`EntraGroupMembership.psm1`** - Main enterprise-grade module ⭐
+- **`EntraGroupMembership.psd1`** - Module manifest with metadata
+- **`Examples.ps1`** - Comprehensive usage examples and interactive demo
 
 ## Prerequisites
 
@@ -22,8 +31,16 @@ This repository contains PowerShell scripts for recursively getting all effectiv
 
 3. **Authentication**
    ```powershell
+   ```powershell
    Connect-MgGraph -Scopes "Group.Read.All", "User.Read.All"
    ```
+
+## Core Capabilities
+
+- **Recursive traversal** of nested group memberships
+- **Circular reference protection** to prevent infinite loops
+- **Depth limiting** to control recursion depth
+- **Deduplication** of users found through multiple paths
 
 ## Key Features
 
@@ -35,114 +52,103 @@ This repository contains PowerShell scripts for recursively getting all effectiv
 - **CSV export** capabilities
 - **Flexible input** - works with Group ID or Display Name
 
-## Quick Start
+## Quick Start (v2.0)
 
-### Method 1: Using the Full Script
-
+### Import the Module
 ```powershell
-# By Group ID
-.\Get-NestedGroupMembers.ps1 -GroupId "12345678-1234-1234-1234-123456789012"
-
-# By Group Display Name
-.\Get-NestedGroupMembers.ps1 -GroupDisplayName "All Company Users" -ExportToCsv
-
-# With additional options
-.\Get-NestedGroupMembers.ps1 -GroupId "12345678-1234-1234-1234-123456789012" -MaxDepth 15 -IncludeGroupInfo -ExportToCsv -CsvPath "C:\Reports\GroupMembers.csv"
-```
-
-### Method 2: Using the Module Function
-
-```powershell
-# Import the module
-Import-Module .\Get-EffectiveGroupMembers.psm1
+# Import the unified module
+Import-Module .\EntraGroupMembership.psm1
 
 # Connect to Microsoft Graph
 Connect-MgGraph -Scopes "Group.Read.All", "User.Read.All"
-
-# Clear variables (if running multiple times)
-$ProcessedGroups.Clear()
-$AllUsers.Clear()
-
-# Get effective members
-Get-EffectiveGroupMembers -GroupId "your-group-id-here"
-
-# View results
-Write-Host "Total effective users: $($AllUsers.Count)"
-$AllUsers.Values | Select-Object DisplayName, UserPrincipalName, Mail | Sort-Object DisplayName
 ```
 
-### Method 3: Using the Example Script
-
+### Basic Usage
 ```powershell
-# Run the example
-.\Example-Usage.ps1
+# Get group members by ID
+$result = Get-EntraGroupMembers -GroupId "12345678-1234-1234-1234-123456789012"
 
-# Follow the prompts or directly call:
-Invoke-GroupMemberExample -GroupId "your-group-id-here"
+# View results
+Write-Host "Found $($result.Statistics.TotalUsers) users in $($result.Statistics.TotalGroups) groups"
+$result.Users | Select-Object DisplayName, UserPrincipalName, Department | Format-Table
+
+# Export to CSV
+Export-EntraGroupMembers -InputObject $result -OutputPath "GroupMembers.csv" -IncludeStatistics
+```
+
+### Advanced Usage
+```powershell
+# Get group members by name with comprehensive options
+$result = Get-EntraGroupMembers -GroupDisplayName "All Company Users" `
+                                -MaxDepth 15 `
+                                -IncludeDisabledUsers `
+                                -IncludeGroupInfo
+
+# Export to multiple formats
+Export-EntraGroupMembers -InputObject $result -OutputPath "report.csv" -IncludeStatistics
+Export-EntraGroupMembers -InputObject $result -OutputPath "report.json" -IncludeStatistics
+Export-EntraGroupMembers -InputObject $result -OutputPath "report.html" -IncludeStatistics
+```
+
+### Interactive Demo
+```powershell
+# Run the interactive demonstration
+.\Examples.ps1
+# Then call: Start-InteractiveDemo
 ```
 
 ## Core Function Explanation
 
-The main recursive function works by:
+The unified module works by:
 
-1. **Checking for circular references** - Prevents infinite loops by tracking processed groups
-2. **Getting direct user members** - Uses `Get-MgGroupMemberAsUser` to get users
-3. **Getting direct group members** - Uses `Get-MgGroupMemberAsGroup` to get nested groups
-4. **Recursively processing nested groups** - Calls itself for each nested group found
-5. **Deduplicating users** - Ensures each user is only counted once
+1. **Validating Graph Connection** - Ensures proper authentication and permissions
+2. **Initializing Module State** - Sets up internal tracking with proper scoping
+3. **Retry Logic Implementation** - Handles transient API failures automatically
+4. **Type-Specific API Calls** - Uses `Get-MgGroupMemberAsUser` and `Get-MgGroupMemberAsGroup` consistently
+5. **Circular Reference Protection** - Prevents infinite loops with robust tracking
+6. **Progress Reporting** - Provides real-time updates for long operations
+7. **Comprehensive Result Object** - Returns structured data with statistics and metadata
 
 ```powershell
-function Get-EffectiveGroupMembers {
+function Get-EntraGroupMembers {
     param(
         [string]$GroupId,
+        [string]$GroupDisplayName,
         [int]$MaxDepth = 10,
-        [int]$CurrentDepth = 0
+        [switch]$IncludeDisabledUsers,
+        [switch]$IncludeGroupInfo
     )
 
-    # Prevent infinite recursion and circular references
-    if ($CurrentDepth -ge $MaxDepth -or $ProcessedGroups.ContainsKey($GroupId)) {
-        return
-    }
-
-    $ProcessedGroups[$GroupId] = $true
-
-    # Get direct user members
-    $userMembers = Get-MgGroupMemberAsUser -GroupId $GroupId -All
-    foreach ($user in $userMembers) {
-        if (-not $AllUsers.ContainsKey($user.Id)) {
-            $AllUsers[$user.Id] = $user
-        }
-    }
-
-    # Get direct group members and recurse
-    $groupMembers = Get-MgGroupMemberAsGroup -GroupId $GroupId -All
-    foreach ($group in $groupMembers) {
-        Get-EffectiveGroupMembers -GroupId $group.Id -MaxDepth $MaxDepth -CurrentDepth ($CurrentDepth + 1)
-    }
+    # Returns structured object:
+    # - Users: Array of user objects with detailed properties
+    # - Statistics: Processing metrics (timing, API calls, etc.)
+    # - ProcessedGroups: Group hierarchy information
+    # - Errors: Any errors encountered during processing
 }
 ```
 
-## Parameters
+## Parameters### Get-EntraGroupMembers Parameters
 
-### Get-NestedGroupMembers.ps1 Parameters
-
-- **`-GroupId`** - Azure AD Group Object ID
+- **`-GroupId`** - Azure AD Group Object ID (GUID format, validated)
 - **`-GroupDisplayName`** - Azure AD Group Display Name (alternative to GroupId)
-- **`-MaxDepth`** - Maximum recursion depth (default: 10)
-- **`-IncludeGroupInfo`** - Include additional group information in output
-- **`-ExportToCsv`** - Export results to CSV file
-- **`-CsvPath`** - Custom path for CSV export
+- **`-MaxDepth`** - Maximum recursion depth (default: 10, range: 1-50)
+- **`-IncludeDisabledUsers`** - Include disabled user accounts in results
+- **`-IncludeGroupInfo`** - Include detailed group information in output
+- **`-ShowProgress`** - Display progress during processing (default: true)
 
-### Get-EffectiveGroupMembers Function Parameters
+### Export-EntraGroupMembers Parameters
 
-- **`-GroupId`** - Azure AD Group Object ID (required)
-- **`-MaxDepth`** - Maximum recursion depth (default: 10)
-- **`-CurrentDepth`** - Current recursion depth (used internally)
+- **`-InputObject`** - Result object from Get-EntraGroupMembers
+- **`-OutputPath`** - Output file path (extension determines format)
+- **`-Format`** - Output format: CSV, JSON, HTML (auto-detected from path)
+- **`-IncludeStatistics`** - Include processing statistics in export
 
 ## Output
 
-The scripts return user objects with the following properties:
+The module returns a comprehensive result object with:
 
+### User Objects
+Each user contains:
 - `UserId` - Azure AD User Object ID
 - `DisplayName` - User's display name
 - `UserPrincipalName` - User's UPN (email)
@@ -151,26 +157,72 @@ The scripts return user objects with the following properties:
 - `Department` - User's department
 - `CompanyName` - User's company
 - `AccountEnabled` - Whether the account is enabled
-- `SourceGroupId` - The group where this user was found (full script only)
-- `SourceGroupName` - The group name where this user was found (full script only)
-- `Depth` - The recursion depth where this user was found (full script only)
+- `SourceGroupId` - The group where this user was found
+- `SourceGroupName` - The group name where this user was found
+- `DiscoveryDepth` - The recursion depth where this user was found
+- `ProcessedAt` - Timestamp when user was processed
+
+### Statistics Object
+- `TotalUsers` - Total unique users found
+- `TotalGroups` - Total groups processed
+- `TotalApiCalls` - Number of Graph API calls made
+- `ProcessingTimeSeconds` - Total processing time
+- `ErrorCount` - Number of errors encountered
+- `StartTime` - Processing start timestamp
+- `EndTime` - Processing end timestamp
+
+### Additional Data
+- `ProcessedGroups` - Array of group details (if IncludeGroupInfo enabled)
+- `Errors` - Array of error messages encountered during processing
 
 ## Error Handling
 
-The scripts include comprehensive error handling for:
+The unified module includes enterprise-grade error handling:
 
-- **Authentication issues** - Checks for Microsoft Graph connection
-- **Permission errors** - Provides clear error messages for insufficient permissions
-- **Group not found** - Handles cases where groups don't exist
-- **API rate limiting** - Graceful handling of Graph API limits
-- **Circular references** - Prevention and detection of infinite loops
+### Automatic Retry Logic
+- **Transient Failures** - Automatic retry with exponential backoff for Graph API errors (429, 5xx)
+- **Configurable Retries** - Default 3 attempts with intelligent delay calculation
+- **Jitter Implementation** - Prevents thundering herd problems in distributed scenarios
+
+### Comprehensive Error Tracking
+- **Individual Group Failures** - Processing continues even if individual groups fail
+- **Detailed Error Messages** - Specific error information with context
+- **Error Collection** - All errors collected in result object for review
+- **Graceful Degradation** - Partial results returned even with some failures
+
+### Validation and Safety
+- **Connection Validation** - Verifies Graph connection and permissions before processing
+- **Parameter Validation** - Input validation with clear error messages
+- **Circular Reference Detection** - Prevents infinite loops with robust tracking
+- **Memory Management** - Proper cleanup of internal state
+
+### Common Error Scenarios Handled
+- **Authentication issues** - Clear guidance for Graph connection
+- **Permission errors** - Specific permission requirements and suggestions
+- **Group not found** - Graceful handling with detailed error messages
+- **API rate limiting** - Automatic retry with appropriate delays
+- **Network timeouts** - Retry logic with exponential backoff
+- **Partial failures** - Continue processing other groups when individual groups fail
 
 ## Performance Considerations
 
-- **Large groups** may take significant time to process
-- **API rate limiting** may slow down processing for very large nested structures
-- **Memory usage** increases with the number of unique users found
-- Consider using **`-MaxDepth`** parameter to limit recursion for very deep nesting
+### Optimizations
+- **Type-Specific API Calls** - More efficient than generic member queries
+- **Retry Logic** - Reduces manual intervention for transient failures
+- **Progress Reporting** - Visibility into long-running operations
+- **Memory Management** - Proper cleanup and scoped variables
+
+### Scalability Features
+- **Configurable Depth Limits** - Prevent runaway processing
+- **API Call Tracking** - Monitor Graph API usage
+- **Processing Statistics** - Performance metrics for optimization
+- **Batch-Ready Design** - Architecture supports future batching enhancements
+
+### Large Environment Considerations
+- **Memory Usage** - Scales with unique user count
+- **Processing Time** - Depends on group structure depth and breadth
+- **API Limits** - Retry logic handles rate limiting automatically
+- **Progress Visibility** - Real-time updates for long operations
 
 ## Troubleshooting
 
@@ -181,27 +233,83 @@ The scripts include comprehensive error handling for:
    Connect-MgGraph -Scopes "Group.Read.All", "User.Read.All"
    ```
 
-2. **"Insufficient privileges"**
-   - Ensure you have the required permissions
-   - Contact your Azure AD administrator
+2. **"Module not found"**
+   ```powershell
+   # Ensure you're in the correct directory
+   Import-Module .\EntraGroupMembership.psm1 -Force
+   ```
 
-3. **"Group not found"**
-   - Verify the Group ID or Display Name
+3. **"Insufficient privileges"**
+   - Ensure you have the required permissions: `Group.Read.All`, `User.Read.All`
+   - Contact your Azure AD administrator for permission assignment
+
+4. **"Group not found"**
+   - Verify the Group ID (must be valid GUID format)
    - Ensure you have permission to read the group
+   - Check group display name spelling
 
-4. **Slow performance**
-   - Reduce `MaxDepth` parameter
-   - Consider processing smaller groups first
+5. **Slow performance or timeouts**
+   - Reduce `MaxDepth` parameter for very deep hierarchies
+   - Use `ShowProgress $false` for automated scripts
+   - Check `$result.Statistics.TotalApiCalls` to monitor API usage
 
-### Debugging
+### Debugging and Monitoring
 
-Enable verbose output for detailed logging:
-
+**Enable Verbose Logging:**
 ```powershell
 $VerbosePreference = "Continue"
-Get-EffectiveGroupMembers -GroupId "your-group-id" -Verbose
+$result = Get-EntraGroupMembers -GroupId "your-group-id" -Verbose
+```
+
+**Check Processing Statistics:**
+```powershell
+$result = Get-EntraGroupMembers -GroupId "your-group-id"
+$result.Statistics | Format-List
+```
+
+**Review Errors:**
+```powershell
+if ($result.Statistics.ErrorCount -gt 0) {
+    $result.Errors | ForEach-Object { Write-Warning $_ }
+}
+```
+
+**Performance Analysis:**
+```powershell
+Write-Host "API Efficiency: $([Math]::Round($result.Statistics.TotalUsers / $result.Statistics.TotalApiCalls, 2)) users per API call"
+Write-Host "Processing Rate: $([Math]::Round($result.Statistics.TotalGroups / $result.Statistics.ProcessingTimeSeconds, 2)) groups per second"
+```
+
+### Getting Additional Help
+
+```powershell
+# Detailed help for main function
+Get-Help Get-EntraGroupMembers -Full
+
+# Detailed help for export function
+Get-Help Export-EntraGroupMembers -Full
+
+# Run interactive examples
+.\Examples.ps1
+Start-InteractiveDemo
 ```
 
 ## License
 
 This code is provided as-is for educational and practical use. Feel free to modify and adapt for your specific needs.
+
+## Contributing
+
+When contributing to this project:
+1. Focus on the unified module (`EntraGroupMembership.psm1`)
+2. Follow PowerShell best practices
+3. Include comprehensive error handling
+4. Add appropriate parameter validation
+5. Update documentation and examples
+
+## Support
+
+For issues and questions:
+1. Check the troubleshooting section above
+2. Run the interactive examples in `Examples.ps1`
+3. Use `Get-Help` commands for detailed parameter information
